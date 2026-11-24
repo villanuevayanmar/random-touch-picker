@@ -11,16 +11,63 @@ const touchLayer = $("touchLayer");
 const clientId = globalThis.crypto?.randomUUID?.() ||
   (Date.now().toString(36) + Math.random().toString(36).slice(2));
 let supabase = null;
-try {
-  if (window.supabase?.createClient) {
-    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
-      realtime: { params: { log_level: "info" } }
+let supabaseLoading = null;
+
+function loadScript(url) {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = url;
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => {
+      script.remove();
+      reject(new Error("Could not load " + url));
+    };
+    document.head.appendChild(script);
+  });
+}
+
+async function ensureSupabase() {
+  if (supabase) return supabase;
+
+  if (!supabaseLoading) {
+    supabaseLoading = (async () => {
+      const sources = [
+        "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2",
+        "https://unpkg.com/@supabase/supabase-js@2"
+      ];
+      let lastError = null;
+
+      for (const source of sources) {
+        try {
+          if (!window.supabase?.createClient) {
+            await loadScript(source);
+          }
+          if (!window.supabase?.createClient) {
+            throw new Error("The CDN loaded but did not expose supabase.createClient.");
+          }
+          supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+            realtime: { params: { log_level: "info" } }
+          });
+          console.info("[Touch Picker] Supabase client initialized.");
+          return supabase;
+        } catch (error) {
+          lastError = error;
+          console.error("[Touch Picker] Supabase SDK source failed:", source, error);
+        }
+      }
+
+      throw new Error(
+        "Could not load the Supabase client from either CDN. " +
+        describeRealtimeError(lastError)
+      );
+    })().catch(error => {
+      supabaseLoading = null;
+      throw error;
     });
-  } else {
-    console.error("Supabase JS failed to load.");
   }
-} catch (error) {
-  console.error("Supabase client initialization failed:", error);
+
+  return supabaseLoading;
 }
 
 let channel = null;
@@ -269,10 +316,8 @@ async function waitForHost(timeoutMs = 6000) {
 }
 
 async function connect(code, host) {
-  showError("");
-  if (!supabase) {
-    throw new Error("The realtime service did not load. Check your internet connection and reload the page.");
-  }
+  showError("Loading Supabase Realtime client…");
+  await ensureSupabase();
   roomCode = code;
   isHost = host;
   channel = supabase.channel("touch-picker-" + roomCode, {

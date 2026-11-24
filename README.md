@@ -1,6 +1,6 @@
 # Random Touch Picker
 
-A minimal, real-time multiplayer touch picker. Friends open the same website, join a room code, and hold a touch on the black play area. Each touch gets its own colored circle. Five seconds after the most recent new touch, the host randomly selects one of the touches still being held. The selected circle remains highlighted.
+A minimal, real-time multiplayer touch picker. Friends open the same website on separate devices and join with a room code. Every finger/pointer is an independent contestant, so one device can contribute several simultaneous touches while another contributes one or more, up to each device's own touchscreen/browser limit. Each touch gets its own colored circle. Five seconds after the most recent new touch, the host randomly selects one of the touches still being held. The selected circle remains highlighted.
 
 ## Files
 

@@ -13,7 +13,9 @@ const clientId = globalThis.crypto?.randomUUID?.() ||
 let supabase = null;
 try {
   if (window.supabase?.createClient) {
-    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+      realtime: { params: { log_level: "info" } }
+    });
   } else {
     console.error("Supabase JS failed to load.");
   }
@@ -49,6 +51,20 @@ function touchColor(id) {
 }
 
 function showError(message) { $("error").textContent = message; }
+
+function describeRealtimeError(error) {
+  if (!error) return "";
+  const parts = [];
+  if (error.message) parts.push(error.message);
+  if (error.cause?.message) parts.push("Cause: " + error.cause.message);
+  if (error.code) parts.push("Code: " + error.code);
+  if (parts.length) return parts.join(" — ");
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
 
 function clearTimer() {
   if (selectionTimer !== null) clearTimeout(selectionTimer);
@@ -91,14 +107,16 @@ function updatePresence() {
     const touches = Array.from(localTouches.values()).map(t => ({
       id: t.id, x: t.x, y: t.y, color: t.color
     }));
-    const { error } = await target.track({
+    const status = await target.track({
       clientId,
       role: isHost ? "host" : "player",
       touches
     });
-    if (error) {
+    if (status !== "ok") {
+      const error = new Error("Supabase Presence registration returned: " + status);
+      error.code = "PRESENCE_TRACK_" + String(status).toUpperCase().replace(/[^A-Z]+/g, "_");
       console.error("Presence update failed:", error);
-      throw new Error(error.message || String(error));
+      throw error;
     }
   });
   return presenceQueue;
@@ -263,25 +281,43 @@ async function connect(code, host) {
     .on("presence", { event: "sync" }, syncPresence);
 
   try {
+    showError("Connecting to Supabase Realtime…");
     await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error("Connection timed out. Try again.")), 12000);
+      let settled = false;
+      let lastStatus = "waiting";
+      const timeout = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        reject(new Error("Realtime connection timed out after 12 seconds (last status: " + lastStatus + ")."));
+      }, 12000);
+
       channel.subscribe((status, subscriptionError) => {
-        if (status === "SUBSCRIBED") {
+        lastStatus = status;
+        console.info("[Touch Picker] Realtime status:", status, subscriptionError || "");
+        if (status === "SUBSCRIBED" && !settled) {
+          settled = true;
           clearTimeout(timeout);
           resolve();
-        } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+        } else if (
+          (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") &&
+          !settled
+        ) {
+          settled = true;
           clearTimeout(timeout);
           console.error("Realtime subscription failed:", status, subscriptionError);
-          const detail = subscriptionError?.message;
-          reject(new Error(detail
-            ? "Realtime connection failed: " + detail
-            : "Realtime connection failed (" + status + "). Check your connection and try again."));
+          const detail = describeRealtimeError(subscriptionError);
+          reject(new Error(
+            "Realtime connection failed (" + status + "). " +
+            (detail || "Check the network connection and Supabase Realtime service.")
+          ));
         }
       });
     });
 
+    showError("Registering room presence…");
+    await updatePresence();
+
     if (host) {
-      await updatePresence();
       $("roomCode").textContent = roomCode;
       setup.hidden = true;
       lobby.hidden = false;
@@ -295,10 +331,17 @@ async function connect(code, host) {
     await updatePresence();
     enterGame();
   } catch (error) {
-    if (channel) await supabase.removeChannel(channel);
+    const failedChannel = channel;
     channel = null;
     roomCode = "";
     isHost = false;
+    if (failedChannel && supabase) {
+      try {
+        await supabase.removeChannel(failedChannel);
+      } catch (cleanupError) {
+        console.error("Failed to clean up unsuccessful room channel:", cleanupError);
+      }
+    }
     throw error;
   }
 }
@@ -318,9 +361,14 @@ async function runConnection(action, busyLabel) {
   joinButton.textContent = busyLabel === "join" ? "Joining..." : joinLabel;
 
   try {
+    showError(busyLabel === "create"
+      ? "Creating room and connecting to Realtime…"
+      : "Joining room and connecting to Realtime…");
     await action();
+    showError("");
   } catch (error) {
-    showError(error.message || "Could not connect to the room.");
+    console.error("Room connection failed:", error);
+    showError(error.message || describeRealtimeError(error) || "Could not connect to the room.");
   } finally {
     connecting = false;
     createButton.disabled = false;

@@ -24,6 +24,7 @@ let roomCode = "";
 let playerName = "Player";
 let isHost = false;
 let hostClientId = null;
+let hostLeftNoticeShown = false;
 let connecting = false;
 let leaving = false;
 let touchNumber = 0;
@@ -722,7 +723,8 @@ function syncPresence() {
 
   const host = records.find(record => record.role === "host");
   if (host) hostClientId = host.clientId;
-  else if (!isHost && hostClientId && !current.has(hostClientId)) {
+  else if (!isHost && hostClientId && !current.has(hostClientId) && !hostLeftNoticeShown) {
+    hostLeftNoticeShown = true;
     showRoomNotice("The room host left. This room cannot select another winner.");
   }
 
@@ -829,6 +831,7 @@ async function connect(code, host) {
   playerName = getPlayerName();
   isHost = host;
   hostClientId = host ? clientId : null;
+  hostLeftNoticeShown = false;
   roundNumber = 0;
   roundLocked = false;
   currentWinner = null;
@@ -1031,6 +1034,7 @@ $("readyButton").addEventListener("click", () => {
   if (mine.ready) {
     const elapsed = now - mine.readyAt;
     if (elapsed < READY_CANCEL_AFTER_MS || elapsed >= READY_LOCK_MS) return;
+    const previousReadyState = { ...mine };
     readyStates.set(clientId, {
       ready: false,
       readyAt: 0,
@@ -1038,7 +1042,14 @@ $("readyButton").addEventListener("click", () => {
     });
     clearRoundStartTimer();
     renderDeviceReadiness();
-    void sendRound("cancel-ready", { roundNumber });
+    void sendRound("cancel-ready", { roundNumber }).then(sent => {
+      if (!sent) {
+        readyStates.set(clientId, previousReadyState);
+        renderDeviceReadiness();
+        showRoomNotice("Cancel could not sync. Your Ready status was restored.");
+        if (isHost) startNextRoundIfReady();
+      }
+    });
     return;
   }
 

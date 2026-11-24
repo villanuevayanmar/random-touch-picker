@@ -49,3 +49,18 @@ button, input { font: inherit; }
 #readyButton:disabled { border-color: #34323d; background: #24232a; color: #bdb9c6; opacity: 1; }
 .ready-hint { margin: -5px 0 0; color: #777383; font-size: .72rem; text-align: center; }
 @media (max-width: 380px) { .result-card { padding: 22px 17px 18px; } }
+
+
+/* Player identity */
+.name-label { margin: 2px 0 -7px; color: #8e8a9b; font-size: .68rem; font-weight: 750; letter-spacing: .16em; }
+.player-name-input { width: 100%; min-height: 46px; padding: 0 13px; border: 1px solid #333; border-radius: 10px; background: #090909; color: #fff; text-align: center; }
+.player-name-input::placeholder { color: #6d6878; }
+#leaveLobby { border-color: #28242f; background: transparent; color: #aaa4b6; font-size: .88rem; }
+#leaveLobby:active { background: #1d1828; }
+
+/* The exit control remains available above the result dialog. */
+.leave-button { position: fixed; z-index: 30; top: calc(env(safe-area-inset-top, 0px) + 14px); right: 14px; display: grid; place-items: center; width: 42px; height: 42px; padding: 0; border: 1px solid #34313d; border-radius: 50%; background: rgb(18 17 24 / 88%); color: #e9e5f2; font-size: 1.75rem; line-height: 1; box-shadow: 0 4px 18px #0008; cursor: pointer; }
+.leave-button:active { background: #30263f; }
+.room-notice { position: fixed; z-index: 31; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 22px); width: max-content; max-width: calc(100vw - 32px); padding: 11px 15px; border: 1px solid #484052; border-radius: 12px; background: rgb(26 23 34 / 96%); color: #f2edf9; font-size: .84rem; text-align: center; box-shadow: 0 8px 28px #0009; transform: translateX(-50%); pointer-events: none; }
+.winner-identity { display: grid; gap: 3px; text-align: left; }
+#winnerPlayerLabel { color: #bcb6c9; font-size: .76rem; font-weight: 600; }

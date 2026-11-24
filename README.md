@@ -1,12 +1,13 @@
 # Random Touch Picker
 
-A minimal, real-time multiplayer touch picker. Friends open the same website on separate devices and join with a room code. Every finger/pointer is an independent contestant, so one device can contribute several simultaneous touches while another contributes one or more, up to each device's own touchscreen/browser limit. Each touch gets its own colored circle. Five seconds after the most recent new touch, the host randomly selects one of the touches still being held. The selected circle remains highlighted.
+A minimal, real-time multiplayer touch picker. Friends open the same website on separate devices and join with a room code. Every finger/pointer is an independent contestant, so one device can contribute several simultaneous touches while another contributes one or more. The host gives each active touch a distinct color from a ten-color palette; colors repeat only when all ten are in use. Five seconds after the most recent new touch, the host randomly selects one of the touches still being held. Every device sees a result popup naming the winning color and whether its device won. Devices mark themselves ready, and the next round begins when all connected devices are ready.
 
 ## Files
 
-- `index.html` — page structure and Supabase client loader
-- `style.css` — black screen, room controls, and touch circles
-- `script.js` — room handling, touch tracking, timer, and random selection
+- `index.html` — page structure, favicon, and result dialog
+- `style.css` — branding, room controls, touch circles, and result dialog
+- `script.js` — Supabase Realtime, touch/color tracking, selection, and device readiness
+- `logo.svg` — app icon used in the browser tab and room screens
 
 ## Backend
 

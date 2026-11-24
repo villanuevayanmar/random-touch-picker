@@ -79,6 +79,7 @@ let selectionTimer = null;
 let roundLocked = false;
 let lastMoveSent = 0;
 let presenceQueue = Promise.resolve();
+let presenceRefreshTimer = null;
 
 const localTouches = new Map();
 const pointerToTouch = new Map();
@@ -191,9 +192,16 @@ function updatePresence() {
 }
 
 function refreshPresence() {
-  void updatePresence().catch(error => {
-    console.error("Could not update room presence:", error);
-  });
+  // Touch down/up can happen several times in quick succession, especially
+  // with multi-touch. Presence is a low-frequency snapshot; touch movement
+  // and color changes already travel through Broadcast.
+  clearTimeout(presenceRefreshTimer);
+  presenceRefreshTimer = setTimeout(() => {
+    presenceRefreshTimer = null;
+    void updatePresence().catch(error => {
+      console.error("Could not update room presence:", error);
+    });
+  }, 600);
 }
 
 function getPresenceRecords() {
@@ -249,7 +257,8 @@ function assignTouchColor(touch) {
     }
   }
   markerFor(coloredTouch);
-  refreshPresence();
+  // Color is sent to every client over Broadcast. Do not re-track Presence
+  // here: doing so for each finger can exceed Supabase's presence rate limit.
   void sendTouch("color", coloredTouch);
   return coloredTouch;
 }
@@ -737,5 +746,6 @@ playArea.addEventListener("pointercancel", finishTouch);
 
 window.addEventListener("pagehide", () => {
   clearTimer();
+  clearTimeout(presenceRefreshTimer);
   if (channel) void supabaseClient.removeChannel(channel);
 });

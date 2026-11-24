@@ -16,6 +16,8 @@
         <img src="logo.svg?v=1" alt="" width="56" height="56">
         <div class="brand-name"><strong>RANDOM TOUCH</strong><span>PICKER</span></div>
       </header>
+      <label class="name-label" for="playerName">YOUR NAME</label>
+      <input id="playerName" class="player-name-input" type="text" maxlength="18" autocomplete="nickname" placeholder="Enter your name" aria-label="Your player name">
       <button id="createRoom" type="button">Create room</button>
       <div class="join-row">
         <input id="roomInput" maxlength="6" autocomplete="off" autocapitalize="characters" placeholder="ROOM CODE" aria-label="Room code">
@@ -35,11 +37,14 @@
       <strong id="roomCode"></strong>
       <button id="copyCode" type="button">Copy code</button>
       <button id="enterGame" type="button">Enter game</button>
+      <button id="leaveLobby" type="button">Leave room</button>
       <p id="lobbyError" role="status"></p>
     </div>
   </section>
 
   <main id="game" hidden>
+    <button id="leaveRoom" class="leave-button" type="button" title="Leave room" aria-label="Leave room"><span aria-hidden="true">×</span></button>
+    <div id="roomNotice" class="room-notice" role="status" aria-live="polite" hidden></div>
     <div id="playArea"><div id="touchLayer" aria-hidden="true"></div></div>
 
     <div id="roundResult" class="result-overlay" hidden>
@@ -49,7 +54,10 @@
         <p id="resultMessage" class="result-message"></p>
         <div class="winning-color">
           <span id="winnerSwatch" aria-hidden="true"></span>
-          <strong id="winnerColorLabel"></strong>
+          <div class="winner-identity">
+            <strong id="winnerColorLabel"></strong>
+            <span id="winnerPlayerLabel"></span>
+          </div>
         </div>
         <div class="ready-section">
           <div class="ready-heading">

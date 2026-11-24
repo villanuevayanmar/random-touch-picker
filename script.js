@@ -10,7 +10,8 @@ const touchLayer = $("touchLayer");
 
 const clientId = globalThis.crypto?.randomUUID?.() ||
   (Date.now().toString(36) + Math.random().toString(36).slice(2));
-let supabase = null;
+// Keep the app client name distinct: the UMD SDK declares a global `var supabase`.
+let supabaseClient = null;
 let supabaseLoading = null;
 
 function loadScript(url) {
@@ -28,7 +29,7 @@ function loadScript(url) {
 }
 
 async function ensureSupabase() {
-  if (supabase) return supabase;
+  if (supabaseClient) return supabaseClient;
 
   if (!supabaseLoading) {
     supabaseLoading = (async () => {
@@ -46,11 +47,11 @@ async function ensureSupabase() {
           if (!window.supabase?.createClient) {
             throw new Error("The CDN loaded but did not expose supabase.createClient.");
           }
-          supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+          supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
             realtime: { params: { log_level: "info" } }
           });
           console.info("[Touch Picker] Supabase client initialized.");
-          return supabase;
+          return supabaseClient;
         } catch (error) {
           lastError = error;
           console.error("[Touch Picker] Supabase SDK source failed:", source, error);
@@ -320,7 +321,7 @@ async function connect(code, host) {
   await ensureSupabase();
   roomCode = code;
   isHost = host;
-  channel = supabase.channel("touch-picker-" + roomCode, {
+  channel = supabaseClient.channel("touch-picker-" + roomCode, {
     config: { broadcast: { self: false }, presence: { key: clientId } }
   });
 
@@ -384,9 +385,9 @@ async function connect(code, host) {
     channel = null;
     roomCode = "";
     isHost = false;
-    if (failedChannel && supabase) {
+    if (failedChannel && supabaseClient) {
       try {
-        await supabase.removeChannel(failedChannel);
+        await supabaseClient.removeChannel(failedChannel);
       } catch (cleanupError) {
         console.error("Failed to clean up unsuccessful room channel:", cleanupError);
       }
@@ -535,5 +536,5 @@ playArea.addEventListener("pointercancel", finishTouch);
 
 window.addEventListener("pagehide", () => {
   clearTimer();
-  if (channel) void supabase.removeChannel(channel);
+  if (channel) void supabaseClient.removeChannel(channel);
 });

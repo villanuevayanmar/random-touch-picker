@@ -19,6 +19,7 @@ button, input { font: inherit; }
 .lobby-label { margin: 0; color: #888; font-size: .72rem; letter-spacing: .18em; }
 #roomCode { font-size: 2rem; letter-spacing: .2em; }
 #game, #playArea { width: 100%; height: 100%; height: 100dvh; background: #000; }
+#game { position: relative; }
 #playArea { position: relative; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
 #touchLayer { position: absolute; inset: 0; pointer-events: none; }
 .touch-marker { position: absolute; width: 80px; height: 80px; border: 3px solid var(--touch-color); border-radius: 50%; background: color-mix(in srgb,var(--touch-color) 24%,transparent); box-shadow: 0 0 0 6px color-mix(in srgb,var(--touch-color) 12%,transparent),0 0 25px color-mix(in srgb,var(--touch-color) 65%,transparent); transform: translate(-50%,-50%) scale(.88); animation: appear .14s ease-out forwards; transition: opacity .2s ease,transform .2s ease,box-shadow .2s ease; }
@@ -26,3 +27,25 @@ button, input { font: inherit; }
 .touch-marker.faded { opacity: 0; transform: translate(-50%,-50%) scale(.7); }
 @keyframes appear { to { transform: translate(-50%,-50%) scale(1); } }
 @media (prefers-reduced-motion: reduce) { *,*::before,*::after { animation-duration:.01ms !important; transition-duration:.01ms !important; } }
+
+.result-overlay { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 22px; background: rgb(0 0 0 / 78%); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+.result-card { width: min(100%, 390px); max-height: min(90dvh, 720px); overflow-y: auto; display: grid; gap: 14px; padding: 25px 22px 20px; border: 1px solid #34314d; border-radius: 22px; background: linear-gradient(155deg,#151322,#09090d 68%); box-shadow: 0 20px 80px #4c27ad30,0 0 28px #3e31a020; text-align: center; }
+.result-eyebrow { margin: 0; color: #a99abf; font-size: .7rem; font-weight: 750; letter-spacing: .22em; }
+#resultTitle { margin: 0; font-size: clamp(1.8rem,8vw,2.35rem); line-height: 1.05; font-weight: 900; }
+.result-message { margin: 0; color: #c4c1ce; font-size: .95rem; }
+.winning-color { display: flex; align-items: center; justify-content: center; gap: 11px; min-height: 48px; }
+#winnerSwatch { width: 25px; height: 25px; border: 3px solid #fff; border-radius: 50%; box-shadow: 0 0 18px currentColor; }
+#winnerColorLabel { font-size: 1rem; letter-spacing: .15em; }
+.ready-section { display: grid; gap: 9px; margin-top: 3px; padding: 14px; border: 1px solid #2a2933; border-radius: 14px; background: #0a0a0e; text-align: left; }
+.ready-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; }
+.ready-heading strong { font-size: .9rem; }
+#readySummary { color: #aaa5b7; font-size: .76rem; }
+.device-list { display: grid; gap: 7px; }
+.device-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 28px; color: #d6d3df; font-size: .84rem; }
+.device-row strong { font-size: .68rem; letter-spacing: .1em; }
+.device-ready { color: #5de0a0; }
+.device-waiting { color: #ffbf68; }
+#readyButton { min-height: 52px; border: 1px solid #7655e8; border-radius: 13px; background: linear-gradient(100deg,#5b35c9,#2769c8); color: #fff; font-weight: 850; letter-spacing: .04em; box-shadow: 0 8px 28px #4936ae40; }
+#readyButton:disabled { border-color: #34323d; background: #24232a; color: #bdb9c6; opacity: 1; }
+.ready-hint { margin: -5px 0 0; color: #777383; font-size: .72rem; text-align: center; }
+@media (max-width: 380px) { .result-card { padding: 22px 17px 18px; } }

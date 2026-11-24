@@ -14,52 +14,38 @@ const clientId = globalThis.crypto?.randomUUID?.() ||
 let supabaseClient = null;
 let supabaseLoading = null;
 
-function loadScript(url) {
-  return new Promise((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = url;
-    script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => {
-      script.remove();
-      reject(new Error("Could not load " + url));
-    };
-    document.head.appendChild(script);
-  });
-}
-
 async function ensureSupabase() {
   if (supabaseClient) return supabaseClient;
 
   if (!supabaseLoading) {
     supabaseLoading = (async () => {
+      // Use ESM imports instead of relying on the UMD global `window.supabase`.
+      // Some mobile browsers/CDN responses load the script without exposing that global.
       const sources = [
-        "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2",
-        "https://unpkg.com/@supabase/supabase-js@2"
+        "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm",
+        "https://esm.sh/@supabase/supabase-js@2"
       ];
       let lastError = null;
 
       for (const source of sources) {
         try {
-          if (!window.supabase?.createClient) {
-            await loadScript(source);
+          const sdk = await import(source);
+          if (typeof sdk.createClient !== "function") {
+            throw new Error("The Supabase module loaded but did not export createClient.");
           }
-          if (!window.supabase?.createClient) {
-            throw new Error("The CDN loaded but did not expose supabase.createClient.");
-          }
-          supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+          supabaseClient = sdk.createClient(SUPABASE_URL, SUPABASE_KEY, {
             realtime: { params: { log_level: "info" } }
           });
-          console.info("[Touch Picker] Supabase client initialized.");
+          console.info("[Touch Picker] Supabase client initialized from", source);
           return supabaseClient;
         } catch (error) {
           lastError = error;
-          console.error("[Touch Picker] Supabase SDK source failed:", source, error);
+          console.error("[Touch Picker] Supabase module failed:", source, error);
         }
       }
 
       throw new Error(
-        "Could not load the Supabase client from either CDN. " +
+        "Could not load the Supabase client. Check this device's connection or content blocker. " +
         describeRealtimeError(lastError)
       );
     })().catch(error => {

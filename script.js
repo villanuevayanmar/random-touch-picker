@@ -298,6 +298,7 @@ function resetRound(nextRoundNumber = roundNumber + 1) {
   isReady = false;
   roundResetPending = false;
   $("roundResult").hidden = true;
+  $("readyHint").textContent = "The next round starts when everyone is ready.";
   renderDeviceReadiness();
   refreshPresence();
 }
@@ -329,7 +330,10 @@ function startNextRoundIfReady(records = getPresenceRecords()) {
       resetRound(nextRoundNumber);
     } else if (!sent) {
       roundResetPending = false;
+      isReady = false;
+      $("readyHint").textContent = "Could not start the next round. Tap Ready to retry.";
       renderDeviceReadiness();
+      refreshPresence();
     }
   });
 }
@@ -637,11 +641,15 @@ $("enterGame").addEventListener("click", enterGame);
 $("readyButton").addEventListener("click", () => {
   if (!roundLocked || isReady || roundResetPending) return;
   isReady = true;
+  $("readyHint").textContent = "Waiting for everyone else to be ready…";
   renderDeviceReadiness();
   void updatePresence().then(() => {
     if (isHost) startNextRoundIfReady();
   }).catch(error => {
     console.error("Could not register ready status:", error);
+    isReady = false;
+    $("readyHint").textContent = "Ready status could not sync. Tap Ready to try again.";
+    renderDeviceReadiness();
   });
 });
 

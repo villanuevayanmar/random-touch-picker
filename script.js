@@ -424,7 +424,8 @@ function syncPresence() {
     const hostRoundNumber = Number(hostPresence.roundNumber) || 0;
     if (hostRoundNumber > roundNumber) {
       resetRound(hostRoundNumber);
-    } else if (
+    }
+    if (
       hostRoundNumber === roundNumber &&
       hostPresence.roundLocked &&
       hostPresence.winner &&

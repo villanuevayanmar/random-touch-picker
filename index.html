@@ -6,8 +6,8 @@
   <meta name="theme-color" content="#000000">
   <title>Random Touch Picker</title>
   <link rel="icon" type="image/svg+xml" href="logo.svg?v=1">
-  <link rel="stylesheet" href="style.css?v=room-debug-5">
-  <script src="script.js?v=room-debug-5" defer></script>
+  <link rel="stylesheet" href="style.css?v=room-debug-6">
+  <script src="script.js?v=room-debug-6" defer></script>
 </head>
 <body>
   <section id="setup" class="setup">
@@ -41,6 +41,27 @@
 
   <main id="game" hidden>
     <div id="playArea"><div id="touchLayer" aria-hidden="true"></div></div>
+
+    <div id="roundResult" class="result-overlay" hidden>
+      <section class="result-card" role="dialog" aria-modal="true" aria-labelledby="resultTitle">
+        <p class="result-eyebrow">ROUND RESULT</p>
+        <h1 id="resultTitle"></h1>
+        <p id="resultMessage" class="result-message"></p>
+        <div class="winning-color">
+          <span id="winnerSwatch" aria-hidden="true"></span>
+          <strong id="winnerColorLabel"></strong>
+        </div>
+        <div class="ready-section">
+          <div class="ready-heading">
+            <strong>Players</strong>
+            <span id="readySummary">Waiting for devices…</span>
+          </div>
+          <div id="deviceList" class="device-list"></div>
+        </div>
+        <button id="readyButton" type="button">I'M READY</button>
+        <p class="ready-hint">The next round starts when everyone is ready.</p>
+      </section>
+    </div>
   </main>
 </body>
 </html>

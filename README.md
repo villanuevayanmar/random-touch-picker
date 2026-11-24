@@ -30,7 +30,10 @@ Open `http://localhost:8000` on devices on the same network, or deploy the files
 2. Other devices join using that code.
 3. Everyone enters the play area and touches/holds the screen.
 4. The host starts or restarts a five-second timer whenever a new touch is detected.
-5. When the timer expires, the host chooses randomly from the active touches and broadcasts the winner.
-6. The selected circle stays highlighted until a new touch starts the next round.
+5. When the timer expires, the host chooses randomly from the active touches and broadcasts the selected touch and its color.
+6. Every device gets a result popup showing whether its touch won. The popup names the winning color, so a device with several simultaneous fingers can identify the selected one.
+7. Each device marks itself ready. The popup lists connected devices and their readiness; the next round begins automatically when every connected device is ready.
 
-The host device must remain connected while the round is running because it owns the selection timer.
+Touch colors are assigned by the host from a shared ten-color palette. Active touches use different colors until all ten are in use; only then can a color repeat. Released touches free their color for a later touch.
+
+The host device must remain connected while the round is running because it owns the selection timer and coordinates the next round.

@@ -1,19 +1,33 @@
 # Random Touch Picker
 
-A minimal, real-time multiplayer touch picker. Friends open the same website on separate devices and join with a room code. Every finger/pointer is an independent contestant, so one device can contribute several simultaneous touches while another contributes one or more. The host gives each active touch a distinct color from a ten-color palette; colors repeat only when all ten are in use. Five seconds after the most recent new touch, the host randomly selects one of the touches still being held. Every device sees a result popup naming the winning color and whether its device won. Devices mark themselves ready, and the next round begins when all connected devices are ready.
+A minimal real-time multiplayer touch picker. Friends open the same website on separate devices and join with a six-character room code. Every finger is an independent contestant, including several fingers on one device.
 
-## Files
+## How a round works
 
-- `index.html` — page structure, favicon, and result dialog
-- `style.css` — branding, room controls, touch circles, and result dialog
-- `script.js` — Supabase Realtime, touch/color tracking, selection, and device readiness
-- `logo.svg` — app icon used in the browser tab and room screens
+1. Create a room, enter a display name, and share the six-character code.
+2. Other devices enter the same name-and-code screen and join.
+3. Hold one or more fingers on the play area. Each active finger gets a color. The ten-color palette stays unique until all ten colors are in use; after that, repeats are balanced across the least-used colors.
+4. The host selects randomly from the fingers still held, five seconds after the latest new touch.
+5. Every device sees the result. The selected device sees **YOU'RE CHOSEN!**; other devices see **NOT CHOSEN**. The result identifies both the player's name and the winning color, and the selected circle stays highlighted.
+6. Each connected device marks Ready. A Ready state becomes cancellable after five seconds and locks after ten seconds. Cancelling starts a five-second wait before Ready can be pressed again. The next round begins only when every currently connected device has completed the ten-second lock-in.
+7. Use the leave icon to exit. Other devices are notified when someone leaves.
 
-## Backend
+## Backend and synchronization
 
 The app uses Supabase Realtime Presence and Broadcast. It does not require custom database tables, Edge Functions, or user accounts.
 
-The current deployment is configured to use the Supabase project `unfippysnnhlftzzjwka`. The `sb_publishable_...` key in `script.js` is a public client key intended for browser use. Never put a Supabase `service_role` key or database password in client-side files.
+Presence is tracked once when a device joins and is used only to identify connected devices. Touch starts/ends, batched touch movement, color assignments, Ready/cancel events, winner results, and round changes use Broadcast. This keeps frequently changing game state out of Presence and avoids the per-client Presence update limit.
+
+The app batches finger movement updates to reduce Realtime message volume. It also sends the host's current touch and round snapshot to devices that join an active room.
+
+The current deployment uses the Supabase project `unfippysnnhlftzzjwka`. The `sb_publishable_...` key in `script.js` is a public browser key. Never put a Supabase secret or service-role key in client-side files.
+
+## Files
+
+- `index.html` — room setup, display name, result dialog, leave controls, and favicon
+- `style.css` — app branding, touch circles, result dialog, and mobile layout
+- `script.js` — Supabase Realtime, touch/color tracking, winner selection, readiness, and leave notifications
+- `logo.svg` — browser tab icon and app header logo
 
 ## Run locally
 
@@ -25,16 +39,4 @@ python -m http.server 8000
 
 Open `http://localhost:8000` on devices on the same network, or deploy the files to a static host.
 
-## How a round works
-
-1. One device creates a room and shares its six-character code.
-2. Other devices join using that code.
-3. Everyone enters the play area and touches/holds the screen.
-4. The host starts or restarts a five-second timer whenever a new touch is detected.
-5. When the timer expires, the host chooses randomly from the active touches and broadcasts the selected touch and its color.
-6. Every device gets a result popup showing whether its touch won. The popup names the winning color, so a device with several simultaneous fingers can identify the selected one.
-7. Each device marks itself ready. The popup lists connected devices and their readiness; the next round begins automatically when every connected device is ready.
-
-Touch colors are assigned by the host from a shared ten-color palette. Active touches use different colors until all ten are in use; only then can a color repeat. Released touches free their color for a later touch.
-
-The host device must remain connected while the round is running because it owns the selection timer and coordinates the next round.
+The host device must stay connected while a round is running because it owns the selection timer and coordinates the next round.

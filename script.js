@@ -83,19 +83,35 @@ let presenceQueue = Promise.resolve();
 const localTouches = new Map();
 const pointerToTouch = new Map();
 const activeTouches = new Map();
+const TOUCH_COLORS = [
+  { name: "Cyan", value: "#21d4fd" },
+  { name: "Pink", value: "#ff4d9d" },
+  { name: "Lime", value: "#a6ed3b" },
+  { name: "Orange", value: "#ff9f43" },
+  { name: "Violet", value: "#a78bfa" },
+  { name: "Blue", value: "#4f83ff" },
+  { name: "Red", value: "#ff5d62" },
+  { name: "Gold", value: "#f7d154" },
+  { name: "Mint", value: "#40dfb0" },
+  { name: "Magenta", value: "#e879f9" }
+];
+let roundNumber = 0;
+let currentWinner = null;
+let isReady = false;
+let roundResetPending = false;
 
 function randomCode() {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   return Array.from({length: 6}, () => chars[Math.floor(Math.random() * chars.length)]).join("");
 }
 
-function touchColor(id) {
-  let hash = 2166136261;
-  for (let i = 0; i < id.length; i++) {
-    hash ^= id.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return "hsl(" + ((hash >>> 0) % 360) + " 100% 65%)";
+function chooseTouchColor() {
+  const used = new Set(Array.from(activeTouches.values())
+    .map(touch => touch.color)
+    .filter(Boolean));
+  const available = TOUCH_COLORS.find(color => !used.has(color.value));
+  if (available) return available;
+  return TOUCH_COLORS[(Math.max(0, activeTouches.size - 1)) % TOUCH_COLORS.length];
 }
 
 function showError(message) { $("error").textContent = message; }
@@ -133,9 +149,9 @@ function markerFor(touch) {
     marker = document.createElement("div");
     marker.className = "touch-marker";
     marker.dataset.id = touch.id;
-    marker.style.setProperty("--touch-color", touch.color);
     touchLayer.appendChild(marker);
   }
+  marker.style.setProperty("--touch-color", touch.color || "#888888");
   marker.style.left = (touch.x * playArea.clientWidth) + "px";
   marker.style.top = (touch.y * playArea.clientHeight) + "px";
   return marker;
@@ -153,12 +169,16 @@ function updatePresence() {
   presenceQueue = presenceQueue.catch(() => {}).then(async () => {
     if (channel !== target) return;
     const touches = Array.from(localTouches.values()).map(t => ({
-      id: t.id, x: t.x, y: t.y, color: t.color
+      id: t.id, x: t.x, y: t.y, color: t.color, colorName: t.colorName
     }));
     const status = await target.track({
       clientId,
       role: isHost ? "host" : "player",
-      touches
+      touches,
+      ready: isReady,
+      roundNumber,
+      roundLocked,
+      winner: currentWinner
     });
     if (status !== "ok") {
       const error = new Error("Supabase Presence registration returned: " + status);
@@ -176,6 +196,64 @@ function refreshPresence() {
   });
 }
 
+function getPresenceRecords() {
+  if (!channel) return [];
+  return Object.values(channel.presenceState()).flat()
+    .filter(presence => presence && presence.clientId);
+}
+
+function renderDeviceReadiness(records = getPresenceRecords()) {
+  const list = $("deviceList");
+  const summary = $("readySummary");
+  const button = $("readyButton");
+  if (!list || !summary || !button) return;
+
+  const devices = [...records].sort((a, b) =>
+    String(a.clientId).localeCompare(String(b.clientId))
+  );
+  const readyCount = devices.filter(device =>
+    Number(device.roundNumber) === roundNumber && device.ready === true
+  ).length;
+
+  summary.textContent = devices.length
+    ? readyCount + " of " + devices.length + " devices ready"
+    : "Waiting for devices…";
+
+  list.replaceChildren();
+  devices.forEach((device, index) => {
+    const row = document.createElement("div");
+    row.className = "device-row";
+    const label = document.createElement("span");
+    label.textContent = device.clientId === clientId ? "This device" : "Device " + (index + 1);
+    const status = document.createElement("strong");
+    const ready = Number(device.roundNumber) === roundNumber && device.ready === true;
+    status.textContent = ready ? "READY" : "WAITING";
+    status.className = ready ? "device-ready" : "device-waiting";
+    row.append(label, status);
+    list.appendChild(row);
+  });
+
+  button.disabled = isReady || !roundLocked || roundResetPending;
+  button.textContent = isReady ? "READY ✓" : "I'M READY";
+}
+
+function assignTouchColor(touch) {
+  if (!isHost || touch.color) return touch;
+  const color = chooseTouchColor();
+  const coloredTouch = { ...touch, color: color.value, colorName: color.name };
+  activeTouches.set(coloredTouch.id, coloredTouch);
+  for (const localTouch of localTouches.values()) {
+    if (localTouch.id === coloredTouch.id) {
+      localTouch.color = coloredTouch.color;
+      localTouch.colorName = coloredTouch.colorName;
+    }
+  }
+  markerFor(coloredTouch);
+  refreshPresence();
+  void sendTouch("color", coloredTouch);
+  return coloredTouch;
+}
+
 async function sendTouch(type, touch) {
   if (!channel) return;
   const status = await channel.send({
@@ -189,29 +267,39 @@ async function sendTouch(type, touch) {
 }
 
 async function sendRound(type, data = {}) {
-  if (!channel) return;
-  const status = await channel.send({
-    type: "broadcast",
-    event: "round",
-    payload: { type, clientId, ...data }
-  });
-  if (status !== "ok") {
-    console.error("Round broadcast failed:", status);
+  if (!channel) return false;
+  try {
+    const status = await channel.send({
+      type: "broadcast",
+      event: "round",
+      payload: { type, clientId, ...data }
+    });
+    if (status !== "ok") {
+      console.error("Round broadcast failed:", status);
+      return false;
+    }
+    return true;
+  } catch (error) {
+    console.error("Round broadcast failed:", error);
+    return false;
   }
 }
 
-function resetRound() {
+function resetRound(nextRoundNumber = roundNumber + 1) {
+  if (nextRoundNumber < roundNumber) return;
   clearTimer();
   activeTouches.clear();
   localTouches.clear();
   pointerToTouch.clear();
   touchLayer.replaceChildren();
+  roundNumber = nextRoundNumber;
   roundLocked = false;
+  currentWinner = null;
+  isReady = false;
+  roundResetPending = false;
+  $("roundResult").hidden = true;
+  renderDeviceReadiness();
   refreshPresence();
-}
-
-function beginNewRoundIfNeeded() {
-  if (roundLocked) resetRound();
 }
 
 function scheduleSelection() {
@@ -222,21 +310,62 @@ function scheduleSelection() {
     const candidates = Array.from(activeTouches.values());
     if (!candidates.length || roundLocked) return;
     const winner = candidates[Math.floor(Math.random() * candidates.length)];
-    roundLocked = true;
-    void sendRound("winner", { touchId: winner.id });
-    showWinner(winner.id);
+    void sendRound("winner", { winner });
+    showWinner(winner);
   }, 5000);
 }
 
-function showWinner(winnerId) {
-  roundLocked = true;
-  clearTimer();
-  for (const touch of activeTouches.values()) {
-    const marker = touchLayer.querySelector('[data-id="' + CSS.escape(touch.id) + '"]');
-    if (!marker) continue;
-    marker.classList.toggle("winner", touch.id === winnerId);
-    marker.classList.toggle("faded", touch.id !== winnerId);
+function startNextRoundIfReady(records = getPresenceRecords()) {
+  if (!isHost || !roundLocked || roundResetPending || records.length === 0) return;
+  const everyoneReady = records.every(device =>
+    Number(device.roundNumber) === roundNumber && device.ready === true
+  );
+  if (!everyoneReady) return;
+  roundResetPending = true;
+  renderDeviceReadiness(records);
+  const nextRoundNumber = roundNumber + 1;
+  void sendRound("reset", { roundNumber: nextRoundNumber }).then(sent => {
+    if (sent && roundNumber < nextRoundNumber) {
+      resetRound(nextRoundNumber);
+    } else if (!sent) {
+      roundResetPending = false;
+      renderDeviceReadiness();
+    }
+  });
+}
+
+function showWinner(winner) {
+  if (!winner) return;
+  const selected = typeof winner === "string" ? activeTouches.get(winner) : winner;
+  if (!selected || !selected.id) return;
+  const previousWinnerId = currentWinner?.id;
+  currentWinner = { ...selected };
+  if (previousWinnerId === currentWinner.id && roundLocked && !$("roundResult").hidden) {
+    renderDeviceReadiness();
+    return;
   }
+
+  roundLocked = true;
+  isReady = false;
+  roundResetPending = false;
+  clearTimer();
+  activeTouches.set(currentWinner.id, currentWinner);
+  for (const touch of activeTouches.values()) {
+    const marker = markerFor(touch);
+    marker.classList.toggle("winner", touch.id === currentWinner.id);
+    marker.classList.toggle("faded", touch.id !== currentWinner.id);
+  }
+
+  const colorName = currentWinner.colorName || "Unknown";
+  $("resultTitle").textContent = currentWinner.clientId === clientId ? "YOU'RE CHOSEN!" : "NOT CHOSEN";
+  $("resultMessage").textContent = currentWinner.clientId === clientId
+    ? "Your " + colorName + " touch was selected."
+    : colorName + " was chosen this round.";
+  $("winnerColorLabel").textContent = colorName.toUpperCase();
+  $("winnerSwatch").style.backgroundColor = currentWinner.color || "#ffffff";
+  $("roundResult").hidden = false;
+  renderDeviceReadiness();
+  refreshPresence();
 }
 
 function applyTouchEvent(payload) {
@@ -244,10 +373,31 @@ function applyTouchEvent(payload) {
   const touch = payload.touch;
 
   if (payload.type === "start") {
-    beginNewRoundIfNeeded();
-    activeTouches.set(touch.id, touch);
-    markerFor(touch);
-    if (isHost) scheduleSelection();
+    if (roundLocked) return;
+    const existing = activeTouches.get(touch.id);
+    const nextTouch = {
+      ...touch,
+      color: touch.color || existing?.color || null,
+      colorName: touch.colorName || existing?.colorName || null
+    };
+    activeTouches.set(nextTouch.id, nextTouch);
+    markerFor(nextTouch);
+    if (isHost) {
+      scheduleSelection();
+      assignTouchColor(nextTouch);
+    }
+  } else if (payload.type === "color") {
+    const existing = activeTouches.get(touch.id);
+    const coloredTouch = { ...existing, ...touch, color: touch.color, colorName: touch.colorName };
+    activeTouches.set(coloredTouch.id, coloredTouch);
+    for (const localTouch of localTouches.values()) {
+      if (localTouch.id === coloredTouch.id) {
+        localTouch.color = coloredTouch.color;
+        localTouch.colorName = coloredTouch.colorName;
+      }
+    }
+    markerFor(coloredTouch);
+    refreshPresence();
   } else if (payload.type === "move") {
     const current = activeTouches.get(touch.id);
     if (!current || roundLocked) return;
@@ -255,8 +405,6 @@ function applyTouchEvent(payload) {
     current.y = touch.y;
     markerFor(current);
   } else if (payload.type === "end") {
-    // After selection, keep the chosen marker visible even if a release event
-    // arrives late from another device.
     if (roundLocked) return;
     activeTouches.delete(touch.id);
     touchLayer.querySelector('[data-id="' + CSS.escape(touch.id) + '"]')?.remove();
@@ -265,34 +413,62 @@ function applyTouchEvent(payload) {
 }
 
 function syncPresence() {
-  if (roundLocked || !channel) return;
-  const state = channel.presenceState();
-  const next = new Map();
-
-  for (const presences of Object.values(state)) {
-    for (const presence of presences) {
-      for (const touch of (presence.touches || [])) {
-        next.set(touch.id, {
-          id: touch.id,
-          clientId: presence.clientId,
-          x: touch.x,
-          y: touch.y,
-          color: touch.color
-        });
-      }
+  if (!channel) return;
+  const records = getPresenceRecords();
+  const hostPresence = records.find(presence => presence.role === "host");
+  if (hostPresence) {
+    const hostRoundNumber = Number(hostPresence.roundNumber) || 0;
+    if (hostRoundNumber > roundNumber) {
+      resetRound(hostRoundNumber);
+    } else if (
+      hostRoundNumber === roundNumber &&
+      hostPresence.roundLocked &&
+      hostPresence.winner &&
+      (!roundLocked || currentWinner?.id !== hostPresence.winner.id)
+    ) {
+      showWinner(hostPresence.winner);
     }
   }
 
-  activeTouches.clear();
-  for (const [id, touch] of next) activeTouches.set(id, touch);
-  drawAllTouches();
-  if (isHost && activeTouches.size === 0) clearTimer();
+  if (!roundLocked) {
+    const next = new Map();
+    for (const presence of records) {
+      if (Number(presence.roundNumber) !== roundNumber) continue;
+      for (const touch of (presence.touches || [])) {
+        const existing = activeTouches.get(touch.id);
+        next.set(touch.id, {
+          ...touch,
+          id: touch.id,
+          clientId: presence.clientId,
+          color: touch.color || existing?.color || null,
+          colorName: touch.colorName || existing?.colorName || null
+        });
+      }
+    }
+    activeTouches.clear();
+    for (const [id, touch] of next) activeTouches.set(id, touch);
+    if (isHost) {
+      for (const touch of activeTouches.values()) {
+        if (!touch.color) assignTouchColor(touch);
+      }
+    }
+    drawAllTouches();
+    if (isHost && activeTouches.size === 0) clearTimer();
+  }
+
+  renderDeviceReadiness(records);
+  startNextRoundIfReady(records);
 }
 
 function receiveRound(payload) {
   if (!payload || payload.clientId === clientId) return;
-  if (payload.type === "winner") showWinner(payload.touchId);
-  if (payload.type === "reset") resetRound();
+  if (payload.type === "winner") showWinner(payload.winner);
+  if (payload.type === "reset") {
+    const nextRoundNumber = Number(payload.roundNumber);
+    if (Number.isSafeInteger(nextRoundNumber) && nextRoundNumber > roundNumber) {
+      resetRound(nextRoundNumber);
+    }
+  }
 }
 
 function enterGame() {
@@ -458,6 +634,17 @@ $("copyCode").addEventListener("click", async () => {
 
 $("enterGame").addEventListener("click", enterGame);
 
+$("readyButton").addEventListener("click", () => {
+  if (!roundLocked || isReady || roundResetPending) return;
+  isReady = true;
+  renderDeviceReadiness();
+  void updatePresence().then(() => {
+    if (isHost) startNextRoundIfReady();
+  }).catch(error => {
+    console.error("Could not register ready status:", error);
+  });
+});
+
 playArea.addEventListener("pointerdown", async event => {
   if (event.pointerType === "mouse" && event.button !== 0) return;
   event.preventDefault();
@@ -467,7 +654,7 @@ playArea.addEventListener("pointerdown", async event => {
     // Synthetic or unsupported pointer capture; normal pointer events still work.
   }
 
-  if (roundLocked) beginNewRoundIfNeeded();
+  if (roundLocked) return;
 
   const p = point(event);
   const id = clientId + ":" + event.pointerId + ":" + (++touchNumber);
@@ -480,13 +667,15 @@ playArea.addEventListener("pointerdown", async event => {
     pointerType: event.pointerType,
     x: p.x,
     y: p.y,
-    color: touchColor(id)
+    color: null,
+    colorName: null
   };
 
   localTouches.set(event.pointerId, touch);
   pointerToTouch.set(event.pointerId, id);
   activeTouches.set(id, touch);
-  markerFor(touch);
+  if (isHost) assignTouchColor(touch);
+  else markerFor(touch);
 
   // Start the host timer at touch-down; each additional new touch restarts it.
   if (isHost) scheduleSelection();

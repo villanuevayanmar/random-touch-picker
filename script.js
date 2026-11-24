@@ -130,22 +130,26 @@ function refreshPresence() {
 
 async function sendTouch(type, touch) {
   if (!channel) return;
-  const { error } = await channel.send({
+  const status = await channel.send({
     type: "broadcast",
     event: "touch",
     payload: { type, clientId, touch }
   });
-  if (error) console.error("Touch broadcast failed:", error);
+  if (status !== "ok") {
+    console.error("Touch broadcast failed:", status);
+  }
 }
 
 async function sendRound(type, data = {}) {
   if (!channel) return;
-  const { error } = await channel.send({
+  const status = await channel.send({
     type: "broadcast",
     event: "round",
     payload: { type, clientId, ...data }
   });
-  if (error) console.error("Round broadcast failed:", error);
+  if (status !== "ok") {
+    console.error("Round broadcast failed:", status);
+  }
 }
 
 function resetRound() {

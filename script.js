@@ -259,7 +259,7 @@ async function sendTouch(type, touch) {
   const status = await channel.send({
     type: "broadcast",
     event: "touch",
-    payload: { type, clientId, touch }
+    payload: { type, clientId, roundNumber, touch }
   });
   if (status !== "ok") {
     console.error("Touch broadcast failed:", status);
@@ -311,7 +311,7 @@ function scheduleSelection() {
     const candidates = Array.from(activeTouches.values());
     if (!candidates.length || roundLocked) return;
     const winner = candidates[Math.floor(Math.random() * candidates.length)];
-    void sendRound("winner", { winner });
+    void sendRound("winner", { winner, roundNumber });
     showWinner(winner);
   }, 5000);
 }
@@ -374,6 +374,7 @@ function showWinner(winner) {
 
 function applyTouchEvent(payload) {
   if (!payload || payload.clientId === clientId || !payload.touch) return;
+  if (Number(payload.roundNumber) !== roundNumber) return;
   const touch = payload.touch;
 
   if (payload.type === "start") {
@@ -467,7 +468,9 @@ function syncPresence() {
 
 function receiveRound(payload) {
   if (!payload || payload.clientId === clientId) return;
-  if (payload.type === "winner") showWinner(payload.winner);
+  if (payload.type === "winner" && Number(payload.roundNumber) === roundNumber) {
+    showWinner(payload.winner);
+  }
   if (payload.type === "reset") {
     const nextRoundNumber = Number(payload.roundNumber);
     if (Number.isSafeInteger(nextRoundNumber) && nextRoundNumber > roundNumber) {

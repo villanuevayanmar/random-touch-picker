@@ -45,6 +45,7 @@ let departureNotices = new Map();
 const localTouches = new Map();
 const pointerToTouch = new Map();
 const activeTouches = new Map();
+const endedTouchIds = new Set();
 const pendingMoves = new Map();
 const readyStates = new Map();
 
@@ -159,6 +160,7 @@ function showRoomNotice(message) {
 
 function notifyDeparture(id, name) {
   if (!id || id === clientId) return;
+  removeTouchesForClient(id);
   const now = Date.now();
   const previous = departureNotices.get(id) || 0;
   if (now - previous < 5000) return;
@@ -267,6 +269,23 @@ function assignTouchColor(touch) {
   }
   markerFor(coloredTouch);
   return coloredTouch;
+}
+
+function removeTouchesForClient(ownerId) {
+  for (const [id, touch] of activeTouches) {
+    if (touch.clientId !== ownerId) continue;
+    endedTouchIds.add(id);
+    activeTouches.delete(id);
+    touchLayer.querySelector('[data-id="' + CSS.escape(id) + '"]')?.remove();
+  }
+
+  for (const [pointerId, touch] of localTouches) {
+    if (touch.clientId !== ownerId) continue;
+    pointerToTouch.delete(pointerId);
+    localTouches.delete(pointerId);
+  }
+
+  if (isHost && activeTouches.size === 0) clearSelectionTimer();
 }
 
 function getPresenceRecords() {
@@ -528,6 +547,7 @@ function resetRound(nextRoundNumber = roundNumber + 1) {
   activeTouches.clear();
   localTouches.clear();
   pointerToTouch.clear();
+  endedTouchIds.clear();
   touchLayer.replaceChildren();
   roundNumber = nextRoundNumber;
   roundLocked = false;
@@ -618,6 +638,10 @@ function applyTouchEvent(payload) {
   const touch = payload.touch;
   const ownerId = touch.clientId || payload.clientId;
 
+  // Broadcasts can arrive out of order. Once a pointer ends, no delayed
+  // start/color/move event may create its marker again during this round.
+  if (endedTouchIds.has(touch.id)) return;
+
   if (payload.type === "start") {
     if (roundLocked) return;
     const incoming = {
@@ -645,11 +669,14 @@ function applyTouchEvent(payload) {
     }
   } else if (payload.type === "color") {
     const existing = activeTouches.get(touch.id);
+    // A color update is only valid for a currently active touch. Never let
+    // a late host color assignment resurrect a marker after pointerup.
+    if (!existing) return;
     const colored = {
       ...existing,
       ...touch,
       clientId: ownerId,
-      playerName: touch.playerName || existing?.playerName || "Player"
+      playerName: touch.playerName || existing.playerName || "Player"
     };
     activeTouches.set(colored.id, colored);
     for (const localTouch of localTouches.values()) {
@@ -660,6 +687,7 @@ function applyTouchEvent(payload) {
     }
     markerFor(colored);
   } else if (payload.type === "end") {
+    endedTouchIds.add(touch.id);
     if (roundLocked) return;
     activeTouches.delete(touch.id);
     touchLayer.querySelector('[data-id="' + CSS.escape(touch.id) + '"]')?.remove();
@@ -975,6 +1003,7 @@ async function leaveRoom() {
   activeTouches.clear();
   localTouches.clear();
   pointerToTouch.clear();
+  endedTouchIds.clear();
   readyStates.clear();
   touchLayer.replaceChildren();
   roomCode = "";
@@ -1084,6 +1113,11 @@ playArea.addEventListener("pointerdown", async event => {
   }
   if (roundLocked) return;
 
+  // Recover from a previously missed release if the browser reuses a pointerId.
+  if (pointerToTouch.has(event.pointerId)) {
+    void finishTouch({ pointerId: event.pointerId });
+  }
+
   const p = point(event);
   const color = chooseTouchColor();
   const id = clientId + ":" + event.pointerId + ":" + (++touchNumber);
@@ -1128,6 +1162,7 @@ async function finishTouch(event) {
 
   pointerToTouch.delete(event.pointerId);
   localTouches.delete(event.pointerId);
+  endedTouchIds.add(id);
   if (roundLocked) return;
 
   activeTouches.delete(id);
@@ -1137,8 +1172,22 @@ async function finishTouch(event) {
   if (isHost && activeTouches.size === 0) clearSelectionTimer();
 }
 
-playArea.addEventListener("pointerup", finishTouch);
-playArea.addEventListener("pointercancel", finishTouch);
+async function releaseAllLocalTouches() {
+  const pointerIds = Array.from(pointerToTouch.keys());
+  for (const pointerId of pointerIds) {
+    await finishTouch({ pointerId });
+  }
+}
+
+// Listen at window level: embedded/mobile browsers can release a pointer
+// outside the play area or cancel it while the page is losing focus.
+window.addEventListener("pointerup", finishTouch, true);
+window.addEventListener("pointercancel", finishTouch, true);
+playArea.addEventListener("lostpointercapture", finishTouch);
+window.addEventListener("blur", () => { void releaseAllLocalTouches(); });
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) void releaseAllLocalTouches();
+});
 
 function randomCode() {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";

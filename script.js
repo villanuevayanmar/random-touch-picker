@@ -1,5 +1,5 @@
 const SUPABASE_URL = "https://unfippysnnhlftzzjwka.supabase.co";
-const SUPABASE_KEY = "sb_publishable_9D9EgSEOqg7DUm5YtsII3";
+const SUPABASE_KEY = "sb_publishable_9D9EgSEOqg7DUm5YtsII3w_5IOKVPH3";
 
 const $ = (id) => document.getElementById(id);
 const setup = $("setup");
@@ -10,7 +10,16 @@ const touchLayer = $("touchLayer");
 
 const clientId = globalThis.crypto?.randomUUID?.() ||
   (Date.now().toString(36) + Math.random().toString(36).slice(2));
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+let supabase = null;
+try {
+  if (window.supabase?.createClient) {
+    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  } else {
+    console.error("Supabase JS failed to load.");
+  }
+} catch (error) {
+  console.error("Supabase client initialization failed:", error);
+}
 
 let channel = null;
 let roomCode = "";
@@ -87,9 +96,18 @@ function updatePresence() {
       role: isHost ? "host" : "player",
       touches
     });
-    if (error) console.error("Presence update failed:", error);
+    if (error) {
+      console.error("Presence update failed:", error);
+      throw new Error(error.message || String(error));
+    }
   });
   return presenceQueue;
+}
+
+function refreshPresence() {
+  void updatePresence().catch(error => {
+    console.error("Could not update room presence:", error);
+  });
 }
 
 async function sendTouch(type, touch) {
@@ -119,7 +137,7 @@ function resetRound() {
   pointerToTouch.clear();
   touchLayer.replaceChildren();
   roundLocked = false;
-  void updatePresence();
+  refreshPresence();
 }
 
 function beginNewRoundIfNeeded() {
@@ -230,6 +248,9 @@ async function waitForHost(timeoutMs = 6000) {
 
 async function connect(code, host) {
   showError("");
+  if (!supabase) {
+    throw new Error("The realtime service did not load. Check your internet connection and reload the page.");
+  }
   roomCode = code;
   isHost = host;
   channel = supabase.channel("touch-picker-" + roomCode, {
@@ -244,13 +265,17 @@ async function connect(code, host) {
   try {
     await new Promise((resolve, reject) => {
       const timeout = setTimeout(() => reject(new Error("Connection timed out. Try again.")), 12000);
-      channel.subscribe(status => {
+      channel.subscribe((status, subscriptionError) => {
         if (status === "SUBSCRIBED") {
           clearTimeout(timeout);
           resolve();
         } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
           clearTimeout(timeout);
-          reject(new Error("Could not connect to the room. Try again."));
+          console.error("Realtime subscription failed:", status, subscriptionError);
+          const detail = subscriptionError?.message;
+          reject(new Error(detail
+            ? "Realtime connection failed: " + detail
+            : "Realtime connection failed (" + status + "). Check your connection and try again."));
         }
       });
     });
@@ -278,12 +303,35 @@ async function connect(code, host) {
   }
 }
 
-$("createRoom").addEventListener("click", async () => {
+let connecting = false;
+
+async function runConnection(action, busyLabel) {
+  if (connecting) return;
+  connecting = true;
+  const createButton = $("createRoom");
+  const joinButton = $("joinRoom");
+  const createLabel = createButton.textContent;
+  const joinLabel = joinButton.textContent;
+  createButton.disabled = true;
+  joinButton.disabled = true;
+  createButton.textContent = busyLabel === "create" ? "Creating..." : createLabel;
+  joinButton.textContent = busyLabel === "join" ? "Joining..." : joinLabel;
+
   try {
-    await connect(randomCode(), true);
+    await action();
   } catch (error) {
-    showError(error.message || "Could not create room.");
+    showError(error.message || "Could not connect to the room.");
+  } finally {
+    connecting = false;
+    createButton.disabled = false;
+    joinButton.disabled = false;
+    createButton.textContent = createLabel;
+    joinButton.textContent = joinLabel;
   }
+}
+
+$("createRoom").addEventListener("click", () => {
+  void runConnection(() => connect(randomCode(), true), "create");
 });
 
 $("joinRoom").addEventListener("click", async () => {
@@ -292,11 +340,7 @@ $("joinRoom").addEventListener("click", async () => {
     showError("Enter a valid 6-character room code.");
     return;
   }
-  try {
-    await connect(code, false);
-  } catch (error) {
-    showError(error.message || "Could not join room.");
-  }
+  await runConnection(() => connect(code, false), "join");
 });
 
 $("roomInput").addEventListener("input", () => {
@@ -319,12 +363,27 @@ $("enterGame").addEventListener("click", enterGame);
 playArea.addEventListener("pointerdown", async event => {
   if (event.pointerType === "mouse" && event.button !== 0) return;
   event.preventDefault();
+  try {
+    playArea.setPointerCapture(event.pointerId);
+  } catch {
+    // Synthetic or unsupported pointer capture; normal pointer events still work.
+  }
 
   if (roundLocked) beginNewRoundIfNeeded();
 
   const p = point(event);
   const id = clientId + ":" + event.pointerId + ":" + (++touchNumber);
-  const touch = { id, clientId, x: p.x, y: p.y, color: touchColor(id) };
+  // Every pointer is an independent contestant. A device can therefore
+  // contribute several simultaneous fingers, limited only by its hardware/browser.
+  const touch = {
+    id,
+    clientId,
+    pointerId: event.pointerId,
+    pointerType: event.pointerType,
+    x: p.x,
+    y: p.y,
+    color: touchColor(id)
+  };
 
   localTouches.set(event.pointerId, touch);
   pointerToTouch.set(event.pointerId, id);
@@ -333,7 +392,7 @@ playArea.addEventListener("pointerdown", async event => {
 
   // Start the host timer at touch-down; each additional new touch restarts it.
   if (isHost) scheduleSelection();
-  void updatePresence();
+  refreshPresence();
   await sendTouch("start", touch);
 });
 
@@ -365,7 +424,7 @@ async function finishTouch(event) {
 
   // Keep the selected colour displayed after the finger is released,
   // but clear the presence snapshot so it cannot leak into the next round.
-  void updatePresence();
+  refreshPresence();
   if (roundLocked) return;
 
   activeTouches.delete(id);
